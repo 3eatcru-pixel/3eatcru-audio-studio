@@ -1,0 +1,6 @@
+{
+  "name": "Gemini Audio Studio",
+  "description": "A professional AI-powered music studio for recording, mixing, and mastering with intelligent vocal processing.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["audio_processing", "ai_suggestions"]
+}
