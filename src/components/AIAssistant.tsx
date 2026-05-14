@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Send, Sparkles, MessageSquare, Wand2, Music, Loader2, Mic, Settings2 } from 'lucide-react';
 import { aiStudioService } from '../services/ai-studio-service';
+import { useStudioStore } from '../store/studioStore';
 
 const AI_TIPS = [
   { 
@@ -26,8 +27,12 @@ interface AIAssistantProps {
 }
 
 export function AIAssistant({ tracks = [], masterPreset = 'None' }: AIAssistantProps) {
+export function AIAssistant({ }: AIAssistantProps) {
+  const { tracks, masterPreset } = useStudioStore(); // Get tracks and masterPreset from Zustand
+
   const [prompt, setPrompt] = useState('');
   const [messages, setMessages] = useState<{ role: 'ai' | 'user', content: string }[]>([
+  const [messages, setMessages] = useState<{ role: 'ai' | 'user', content: string }[]>([ 
     { role: 'ai', content: `Hello! I'm AURA. I see you're working on a session with ${tracks.length} tracks and ${masterPreset} mastering. I now have access to real-time web search for gear info, references, and tutorials. How can I help you today?` }
   ]);
   const [isLoading, setIsLoading] = useState(false);

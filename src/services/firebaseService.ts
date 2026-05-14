@@ -116,7 +116,7 @@ export const saveProjectMetadata = async (metadata: any) => {
   try {
     await setDoc(doc(db, 'projects', metadata.id), {
       ...metadata,
-      updatedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(), // Adicionado para controle de versão
     }, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);

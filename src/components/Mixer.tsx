@@ -3,26 +3,26 @@ import { motion } from 'motion/react';
 import { Volume2, VolumeX, Mic, Music, Keyboard, Zap, Shield, ChevronUp } from 'lucide-react';
 import { Track } from '../types';
 import { cn } from '../lib/utils';
+import { audioEngine } from '../services/audioEngine';
+import { useStudioStore } from '../store/studioStore';
 
 interface MixerProps {
-  tracks: Track[];
-  selectedId: string | null;
   onUpdateTrack: (id: string, updates: Partial<Track>) => void;
   onInteractionStart?: () => void;
   onInteractionEnd?: () => void;
 }
 
-function VUMeter({ volume, isActive }: { volume: number, isActive: boolean }) {
+function VUMeter({ trackId, isActive }: { trackId?: string, isActive: boolean }) {
   const [level, setLevel] = useState(0);
 
   useEffect(() => {
     if (!isActive) { setLevel(0); return; }
     const interval = setInterval(() => {
-      // Shimmering level simulation
-      setLevel(volume * (0.7 + Math.random() * 0.3));
+      const realLevel = audioEngine.getTrackLevel(trackId);
+      setLevel(realLevel);
     }, 100);
     return () => clearInterval(interval);
-  }, [isActive, volume]);
+  }, [isActive, trackId]);
 
   return (
     <div className="w-1.5 h-full bg-studio-panel rounded-full overflow-hidden flex flex-col justify-end gap-0.5 p-0.5">
@@ -123,7 +123,9 @@ function VisualEQ({ hi, mid, low }: { hi: number, mid: number, low: number }) {
   );
 }
 
-export function Mixer({ tracks, selectedId, onUpdateTrack, onInteractionStart, onInteractionEnd }: MixerProps) {
+export function Mixer({ onUpdateTrack, onInteractionStart, onInteractionEnd }: MixerProps) {
+  const { tracks, selectedTrackId } = useStudioStore(); // Get tracks and selectedTrackId from Zustand
+
   return (
     <div className="flex gap-2 h-full overflow-x-auto pb-4 pt-1 px-1">
       {tracks.map(track => (
@@ -131,9 +133,9 @@ export function Mixer({ tracks, selectedId, onUpdateTrack, onInteractionStart, o
           key={track.id}
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
-          className={cn(
+          className={cn( 
             "w-36 shrink-0 flex flex-col items-center bg-studio-panel border border-studio-border rounded shadow-lg transition-all relative overflow-hidden",
-            selectedId === track.id ? "ring-1 ring-studio-accent border-studio-accent/50" : "hover:border-studio-border/80"
+            selectedTrackId === track.id ? "ring-1 ring-studio-accent border-studio-accent/50" : "hover:border-studio-border/80"
           )}
           onClick={() => onUpdateTrack(track.id, {})}
         >
@@ -219,7 +221,7 @@ export function Mixer({ tracks, selectedId, onUpdateTrack, onInteractionStart, o
 
           {/* Fader Section */}
           <div className="flex-1 w-full flex px-3 gap-2">
-            <VUMeter volume={track.volume} isActive={true} />
+            <VUMeter trackId={track.id} isActive={true} />
             
             <div className="relative flex-1 bg-studio-bg rounded-sm border border-studio-border/50 flex justify-center py-2 h-40">
               {/* Fader Scale */}
@@ -323,8 +325,8 @@ export function Mixer({ tracks, selectedId, onUpdateTrack, onInteractionStart, o
 
         <div className="flex-1 w-full flex px-4 gap-4">
           <div className="flex gap-1">
-            <VUMeter volume={0.8} isActive={true} />
-            <VUMeter volume={0.78} isActive={true} />
+            <VUMeter isActive={true} />
+            <VUMeter isActive={true} />
           </div>
           
           <div className="relative flex-1 bg-studio-bg rounded-sm border border-studio-accent/20 flex justify-center py-2">
@@ -349,4 +351,3 @@ export function Mixer({ tracks, selectedId, onUpdateTrack, onInteractionStart, o
     </div>
   );
 }
-

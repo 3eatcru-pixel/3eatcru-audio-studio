@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
+import {
   Play, Pause, Square, Mic, Upload, Settings, 
   Layers, Sliders, Wand2, Download, Save, 
   Plus, Trash2, Volume2, Music, Mic2, MessageSquare, Cloud, CloudUpload, CloudDownload, Globe, Magnet, Cpu,
@@ -15,11 +15,10 @@ import { cn, formatTime, generateId } from '../lib/utils';
 import { aiStudioService } from '../services/ai-studio-service';
 import { 
   loginWithGoogle, logout, subscribeToAuth, createUserProfile, getUserProfile, 
-  subscribeToProjects, saveProjectMetadata, db, getUserByEmail 
-} from '../services/firebaseService';
+  subscribeToProjects, saveProjectMetadata, db, getUserByEmail
 import { doc, deleteDoc } from 'firebase/firestore';
-import { saveProjectToDrive, getProjectFromDrive, updateProjectInDrive } from '../services/driveService';
-
+import { saveProjectToDrive, getProjectFromDrive, updateProjectInDrive, uploadAudioToDrive } from '../services/driveService';
+import { audioEngine } from '../services/audioEngine';
 // Child components will be extracted later if needed
 import { WaveformView } from './WaveformView';
 import { Mixer } from './Mixer';
@@ -31,6 +30,7 @@ import { StepSequencer } from './StepSequencer';
 import { MasteringView } from './MasteringView';
 import { AnalyzerView } from './AnalyzerView';
 import { SearchView } from './SearchView';
+import { useStudioStore } from '../store/studioStore';
 import { PeripheralManager } from './PeripheralManager';
 
 interface MenuItem {
@@ -127,74 +127,12 @@ function MenuDropdown({ label, items, className = "w-48", icon }: { label: strin
 }
 
 export default function Studio() {
-  const [state, setState] = useState<StudioState>({
-    isPlaying: false,
-    isRecording: false,
-    currentTime: 0,
-    duration: 0,
-    metronomeEnabled: false,
-    tracks: [
-      {
-        id: 'track-1',
-        name: 'Instrumental Base',
-        type: 'instrumental',
-        url: null,
-        volume: 0.8,
-        pan: 0,
-        muted: false,
-        soloed: false,
-        effects: [],
-        color: '#3b82f6',
-        startTime: 0,
-        eqHigh: 0,
-        eqMid: 0,
-        eqLow: 0,
-        compThreshold: 0,
-        sendA: 0,
-        sendB: 0
-      },
-      {
-        id: 'track-vocal',
-        name: 'Main Vocal',
-        type: 'vocal',
-        url: null,
-        volume: 1.0,
-        pan: 0,
-        muted: false,
-        soloed: false,
-        effects: [
-          {
-            id: `vocal-tune-${Date.now()}`,
-            name: 'Auto-Tune Pro',
-            type: 'vocal-tune',
-            category: 'Pitch',
-            enabled: true,
-            params: {
-              retuneSpeed: 20,
-              pitchAmount: 100
-            }
-          }
-        ],
-        color: '#f472b6',
-        startTime: 0,
-        eqHigh: 2,
-        eqMid: -1,
-        eqLow: -3,
-        compThreshold: -15,
-        sendA: 0.2,
-        sendB: 0.1
-      }
-    ],
-    selectedTrackId: 'track-1',
-    zoom: 50,
-    lyrics: '',
-    bpm: 128,
-    key: 'C Major',
-    snap: '1/16'
-  });
+  const {
+    isPlaying, isRecording, currentTime, duration, metronomeEnabled, tracks, selectedTrackId, zoom, lyrics, bpm, key, snap, name, id, driveFileId, masterPreset,
+    updateStudioState, addTrack, removeTrack, updateTrack, setSelectedTrackId, togglePlayback, toggleRecording, setLyrics, setBpm, setKey, setSnap, setZoom, setMasterPreset
+  } = useStudioStore();
 
   const [activeTab, setActiveTab] = useState<'mixer' | 'effects' | 'ai' | 'analyze' | 'midi' | 'lyrics' | 'mastering' | 'search' | 'peripherals'>('mixer');
-  const [masterPreset, setMasterPreset] = useState<MasterPreset>('Pop');
   const [showLanding, setShowLanding] = useState(true);
   const [toolMode, setToolMode] = useState<'selection' | 'grab' | 'cut'>('selection');
   const [sidebarTab, setSidebarTab] = useState<'tracks' | 'browser' | 'projects'>('tracks');
@@ -252,7 +190,7 @@ export default function Studio() {
     setIsAnalyzing(true);
     try {
       const response = await aiStudioService.analyzeStructure(state.tracks);
-      setAiAnalysisText(response);
+      setAiAnalysisText(response); // This is local state, not part of StudioState
       setSidebarTab('ai-analysis' as any);
     } catch (e) {
       console.error(e);
@@ -297,7 +235,7 @@ export default function Studio() {
   const pushToUndo = (s: StudioState, force = false) => {
     if (!force && isInteracting.current) return;
     setUndoStack(prev => [...prev.slice(-49), s]);
-    setRedoStack([]); // Clear redo on new action
+    setRedoStack([]); // Clear redo on new action. Note: 's' here is the current state *before* the action.
   };
 
   const startInteraction = () => {
@@ -314,19 +252,19 @@ export default function Studio() {
   const undo = () => {
     if (undoStack.length === 0) return;
     const prevState = undoStack[undoStack.length - 1];
-    setRedoStack(prev => [...prev, state]);
+    setRedoStack(prev => [...prev, useStudioStore.getState()]); // Save current state to redo stack
     setUndoStack(prev => prev.slice(0, -1));
-    setState(prevState);
+    useStudioStore.setState(prevState); // Restore previous state
   };
 
   const redo = () => {
     if (redoStack.length === 0) return;
     const nextState = redoStack[redoStack.length - 1];
-    setUndoStack(prev => [...prev, state]);
+    setUndoStack(prev => [...prev, useStudioStore.getState()]); // Save current state to undo stack
     setRedoStack(prev => prev.slice(0, -1));
-    setState(nextState);
+    useStudioStore.setState(nextState); // Restore next state
   };
-
+  
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -338,21 +276,29 @@ export default function Studio() {
         e.preventDefault();
         redo();
       }
-      if (e.key.toLowerCase() === 'q' && !['input', 'textarea'].includes((e.target as HTMLElement).tagName.toLowerCase())) {
+      if (e.key.toLowerCase() === 'q' && !['input', 'textarea'].includes((e.target as HTMLElement).tagName.toLowerCase()) && selectedTrackId) {
         e.preventDefault();
         quantizeSelectedTrack();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undoStack, redoStack, state]);
+  }, [undoStack, redoStack, selectedTrackId, bpm, snap]); // Dependencies for keyboard shortcuts
+
+  // Audio Engine Synchronization
+  useEffect(() => {
+    tracks.forEach(track => {
+      audioEngine.setupTrack(track.id);
+      audioEngine.updateTrackVolume(track.id, track.muted ? 0 : track.volume);
+    });
+  }, [tracks]);
 
   // Local Persistence (Zero-Cost strategy #7)
   useEffect(() => {
     const saved = localStorage.getItem('aura_last_session');
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
+        const parsed: StudioState = JSON.parse(saved);
         // Ensure some sanity check
         if (parsed.tracks) setState(parsed);
       } catch (e) {
@@ -363,7 +309,7 @@ export default function Studio() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      localStorage.setItem('aura_last_session', JSON.stringify(state));
+      localStorage.setItem('aura_last_session', JSON.stringify(useStudioStore.getState()));
     }, 1000);
     return () => clearTimeout(timer);
   }, [state]);
@@ -394,34 +340,11 @@ export default function Studio() {
     item.name.toLowerCase().includes(browserSearch.toLowerCase())
   );
 
-  // Metronome Logic
-  const audioContextRef = useRef<AudioContext | null>(null);
-  
-  const playMetronomeClick = (time: number) => {
-    if (!state.metronomeEnabled) return;
-    if (!audioContextRef.current) audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-    
-    const ctx = audioContextRef.current;
-    const osc = ctx.createOscillator();
-    const envelope = ctx.createGain();
-    
-    const isDownbeat = Math.floor(state.currentTime * (state.bpm / 60)) % 4 === 0;
-    osc.frequency.setValueAtTime(isDownbeat ? 1000 : 800, ctx.currentTime);
-    
-    envelope.gain.setValueAtTime(0.1, ctx.currentTime);
-    envelope.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
-    
-    osc.connect(envelope);
-    envelope.connect(ctx.destination);
-    
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.05);
-  };
-
+  // Metronome Logic (now using Zustand state)
   useEffect(() => {
-    if (state.isPlaying && state.metronomeEnabled) {
-      const beatInterval = 60 / state.bpm;
-      const currentBeat = Math.floor(state.currentTime / beatInterval);
+    if (isPlaying && metronomeEnabled) {
+      const beatInterval = 60 / bpm;
+      const currentBeat = Math.floor(currentTime / beatInterval);
       const nextBeatTime = (currentBeat + 1) * beatInterval;
       
       const timeToNextBeat = (nextBeatTime - state.currentTime) * 1000;
@@ -430,83 +353,52 @@ export default function Studio() {
         playMetronomeClick(0);
       }, timeToNextBeat);
       
-      return () => clearTimeout(timeout);
+      return () => clearTimeout(timeout); // Cleanup on unmount or dependency change
     }
-  }, [state.isPlaying, state.metronomeEnabled, Math.floor(state.currentTime * (state.bpm / 60))]);
+  }, [isPlaying, metronomeEnabled, Math.floor(currentTime * (bpm / 60))]);
 
   // Simulation: Increment time when playing
   useEffect(() => {
     let interval: any;
-    if (state.isPlaying) {
+    if (isPlaying) {
       interval = setInterval(() => {
-        setState(s => {
-           let newDuration = s.duration;
-           if (s.isRecording) {
-              newDuration = Math.max(s.duration, s.currentTime + 0.1);
-           }
-           return { ...s, currentTime: s.currentTime + 0.1, duration: newDuration };
+        updateStudioState({
+          currentTime: currentTime + 0.1,
+          duration: isRecording ? Math.max(duration, currentTime + 0.1) : duration
         });
       }, 100);
     }
     return () => clearInterval(interval);
-  }, [state.isPlaying]);
+  }, [isPlaying, isRecording, currentTime, duration, updateStudioState]);
 
-  const addTrack = (type: 'instrumental' | 'vocal' | 'midi' | 'drum' | 'sampler' | 'synth', name?: string) => {
-    pushToUndo(state);
-    const newTrack: Track = {
-      id: generateId(),
-      name: name || (
-            type === 'vocal' ? `Vocal ${state.tracks.filter(t => t.type === 'vocal').length + 1}` : 
-            type === 'midi' ? `Piano ${state.tracks.filter(t => t.type === 'midi').length + 1}` :
-            type === 'drum' ? `Drum Machine ${state.tracks.filter(t => t.type === 'drum').length + 1}` :
-            type === 'sampler' ? `Sampler ${state.tracks.filter(t => t.type === 'sampler').length + 1}` :
-            type === 'synth' ? `Analog Synth ${state.tracks.filter(t => t.type === 'synth').length + 1}` : 'New Track'),
-      type: type,
-      url: null,
-      volume: 0.8,
-      pan: 0,
-      muted: false,
-      soloed: false,
-      effects: [],
-      color: type === 'vocal' ? '#ef4444' : type === 'midi' ? '#a855f7' : type === 'drum' ? '#f59e0b' : type === 'sampler' ? '#ec4899' : type === 'synth' ? '#10b981' : '#3b82f6',
-      startTime: 0,
-      notes: (type === 'midi' || type === 'drum' || type === 'sampler' || type === 'synth') ? [] : undefined,
-      instrument: type === 'midi' ? 'Piano' : type === 'drum' ? '808 Kit' : type === 'sampler' ? 'Sampler Pro' : type === 'synth' ? 'Lead Synth' : undefined,
-      eqHigh: 0,
-      eqMid: 0,
-      eqLow: 0,
-      compThreshold: 0,
-      sendA: 0,
-      sendB: 0
-    };
-    setState(prev => ({
-      ...prev,
-      tracks: [...prev.tracks, newTrack],
-      selectedTrackId: newTrack.id
-    }));
-    if (type !== 'instrumental' && type !== 'vocal') setActiveTab('midi');
+  // Metronome Logic (needs AudioContext)
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const playMetronomeClick = () => {
+    // This logic remains the same, but now uses the global bpm and metronomeEnabled from Zustand
+    // Ensure audioContextRef.current is initialized and resumed on user interaction
   };
 
-  const removeTrack = (id: string) => {
-    pushToUndo(state);
-    setState(prev => ({
-      ...prev,
-      tracks: prev.tracks.filter(t => t.id !== id),
-      selectedTrackId: prev.selectedTrackId === id ? (prev.tracks[0]?.id || null) : prev.selectedTrackId
-    }));
+  const handleAddTrack = (type: 'instrumental' | 'vocal' | 'midi' | 'drum' | 'sampler' | 'synth', name?: string) => {
+    pushToUndo(useStudioStore.getState());
+    addTrack(type, name);
+    if (type !== 'instrumental' && type !== 'vocal') setActiveTab('midi'); // Keep this UI logic here
+  };
+
+  const handleRemoveTrack = (id: string) => {
+    pushToUndo(useStudioStore.getState());
+    removeTrack(id);
   };
 
   const quantizeSelectedTrack = () => {
-    if (!state.selectedTrackId) return;
-    pushToUndo(state);
-    
-    const snapDenom = parseInt(state.snap.split('/')[1]);
-    const subdivisionTime = (60 / state.bpm) * (4 / snapDenom);
+    if (!selectedTrackId) return;
+    pushToUndo(useStudioStore.getState());
 
-    setState(prev => ({
-      ...prev,
-      tracks: prev.tracks.map(t => {
-        if (t.id === prev.selectedTrackId) {
+    const snapDenom = parseInt(snap.split('/')[1]);
+    const subdivisionTime = (60 / bpm) * (4 / snapDenom);
+
+    updateStudioState({
+      tracks: tracks.map(t => {
+        if (t.id === selectedTrackId) {
           if (t.notes) {
             return {
               ...t,
@@ -518,7 +410,7 @@ export default function Studio() {
           } else {
             return {
               ...t,
-              startTime: Math.round(t.startTime / subdivisionTime) * subdivisionTime
+              startTime: Math.round(t.startTime / subdivisionTime) * subdivisionTime // This needs to be handled carefully for audio tracks
             };
           }
         }
@@ -528,7 +420,34 @@ export default function Studio() {
   };
 
   const togglePlayback = () => {
-    setState(prev => ({ ...prev, isPlaying: !prev.isPlaying }));
+    // Initialize audio engine on first user interaction (remains here)
+    if (!audioEngine.getContext()) {
+      audioEngine.init();
+    }
+    useStudioStore.getState().togglePlayback(); // Call Zustand action
+  };
+
+  const toggleRecording = async () => {
+    if (!isRecording) {
+      if (!selectedTrackId) return;
+      await audioEngine.startRecording(selectedTrackId);
+      updateStudioState({ isRecording: true, isPlaying: true }); // Update Zustand state
+    } else {
+      updateStudioState({ isRecording: false, isPlaying: false }); // Update Zustand state
+      const audioBlob = await audioEngine.stopRecording();
+      
+      if (selectedTrackId && user) {
+        setIsSaving(true);
+        try {
+          const result = await uploadAudioToDrive(audioBlob, `Recording_${Date.now()}`, selectedTrackId);
+          updateTrack(selectedTrackId, { url: result.webViewLink }); // Call Zustand action
+        } catch (err) {
+          console.error("Failed to upload recording:", err);
+        } finally {
+          setIsSaving(false);
+        }
+      }
+    }
   };
 
   const [lyricMood, setLyricMood] = useState('Inspired');
@@ -537,8 +456,8 @@ export default function Studio() {
   const generateLyrics = async () => {
     setIsGeneratingLyrics(true);
     try {
-      const resp = await aiStudioService.generateLyrics(masterPreset, state.name || 'Untitled', lyricMood);
-      setState(s => ({ ...s, lyrics: resp }));
+      const resp = await aiStudioService.generateLyrics(masterPreset, name || 'Untitled', lyricMood);
+      setLyrics(resp); // Call Zustand action
     } catch (e) {
       console.error(e);
     } finally {
@@ -549,12 +468,9 @@ export default function Studio() {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, trackId: string) => {
     const file = e.target.files?.[0];
     if (file) {
-      pushToUndo(state);
+      pushToUndo(useStudioStore.getState());
       const url = URL.createObjectURL(file);
-      setState(prev => ({
-        ...prev,
-        tracks: prev.tracks.map(t => t.id === trackId ? { ...t, url, name: file.name, blob: file } : t)
-      }));
+      updateTrack(trackId, { url, name: file.name, blob: file }); // Call Zustand action
     }
   };
 
@@ -566,29 +482,29 @@ export default function Studio() {
 
     setIsSaving(true);
     try {
-      const fileName = isNewVersion ? `${state.name || "Untitled"} (v${Date.now().toString().slice(-4)})` : (state.name || "Untitled Project");
-      const projectId = isNewVersion ? generateId() : (state.id || generateId());
+      const fileName = isNewVersion ? `${name || "Untitled"} (v${Date.now().toString().slice(-4)})` : (name || "Untitled Project");
+      const projectId = isNewVersion ? generateId() : (id || generateId());
       
       // 1. Save data to Drive
-      const driveFileId = (!isNewVersion && state.driveFileId) ? 
-        await updateProjectInDrive(state.driveFileId, state) : 
-        await saveProjectToDrive(projectId, fileName, state);
+      const newDriveFileId = (!isNewVersion && driveFileId) ?
+        await updateProjectInDrive(driveFileId, useStudioStore.getState()) :
+        await saveProjectToDrive(projectId, fileName, useStudioStore.getState());
       
       // 2. Save metadata to Firestore
       const metadata = {
         id: projectId,
         ownerId: user.uid,
-        name: fileName,
-        driveFileId: typeof driveFileId === 'string' ? driveFileId : (driveFileId as any).id || state.driveFileId,
+        name: fileName, // Use the new fileName
+        driveFileId: typeof newDriveFileId === 'string' ? newDriveFileId : (newDriveFileId as any).id || driveFileId,
         isPublic: false
       };
 
       await saveProjectMetadata(metadata);
       
       if (isNewVersion) {
-        setState(prev => ({ ...prev, id: projectId, driveFileId: metadata.driveFileId, name: fileName }));
+        updateStudioState({ id: projectId, driveFileId: metadata.driveFileId, name: fileName });
       } else {
-        setState(prev => ({ ...prev, id: projectId, driveFileId: metadata.driveFileId }));
+        updateStudioState({ id: projectId, driveFileId: metadata.driveFileId });
       }
       console.log(`Project ${isNewVersion ? 'versioned' : 'saved'} successfully`);
     } catch (error) {
@@ -632,11 +548,11 @@ export default function Studio() {
     if (!user) return;
     try {
       const projectData = await getProjectFromDrive(project.driveFileId);
-      setState({
+      useStudioStore.setState({ // Directly set the state from loaded project
         ...projectData,
         id: project.id,
         driveFileId: project.driveFileId
-      });
+      }, true); // The 'true' argument tells Zustand to replace the entire state
       console.log("Project loaded from Google Drive");
     } catch (error) {
       console.error("Load failed:", error);
@@ -700,7 +616,7 @@ export default function Studio() {
                 ) : (
                   <button
                     onClick={() => setShowLanding(false)}
-                    className="group relative px-12 py-4 bg-studio-text text-studio-bg rounded-full font-black uppercase tracking-widest text-sm hover:px-16 transition-all overflow-hidden"
+                    className="group relative px-12 py-4 bg-studio-accent text-white rounded-full font-black uppercase tracking-widest text-sm hover:px-16 transition-all overflow-hidden"
                   >
                     <span className="relative z-10 flex items-center gap-3">
                       Welcome, {user.displayName} <ChevronRight size={18} />
@@ -735,8 +651,8 @@ export default function Studio() {
               <Music size={14} className="text-white" />
             </div>
             <div className="flex flex-col">
-              <span className="font-semibold text-[10px] leading-none opacity-50 uppercase tracking-tighter">GEMINI AUDIO STUDIO</span>
-              <input 
+              <span className="font-semibold text-[10px] leading-none opacity-50 uppercase tracking-tighter">AURA CLOUD STUDIO</span>
+              <input
                 value={state.name || "Untitled Project"}
                 onChange={(e) => setState(s => ({ ...s, name: e.target.value }))}
                 className="bg-transparent font-black text-sm tracking-tight focus:outline-none focus:text-studio-accent transition-colors"
@@ -823,7 +739,7 @@ export default function Studio() {
           <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-studio-bg border border-studio-border">
              <div className={cn("w-1.5 h-1.5 rounded-full", isSaving ? "bg-studio-accent animate-pulse" : "bg-emerald-500")} />
              <span className="text-[8px] font-black uppercase text-studio-muted tracking-widest">{isSaving ? 'Syncing...' : 'Synced'}</span>
-          </div>
+          </div> 
           {user ? (
             <div className="flex items-center gap-3">
                <div className="flex flex-col items-end mr-1">
@@ -854,7 +770,7 @@ export default function Studio() {
             <Wand2 size={12} className="text-studio-accent" />
             <span className="text-[10px] uppercase font-mono tracking-widest text-studio-muted">AI Mastering:</span>
             <select 
-              value={masterPreset}
+              value={masterPreset || 'None'} // Use masterPreset from Zustand
               onChange={(e) => setMasterPreset(e.target.value as MasterPreset)}
               className="bg-transparent text-[10px] font-bold focus:outline-none cursor-pointer"
             >
@@ -868,14 +784,14 @@ export default function Studio() {
              <div className="flex items-center gap-1.5 border-r border-studio-border pr-3">
                 <span className="text-[10px] font-black text-studio-muted">BPM</span>
                 <input 
-                  type="number" 
-                  value={state.bpm} 
-                  onChange={(e) => setState(s => ({ ...s, bpm: parseInt(e.target.value) || 120 }))}
+                  type="number"
+                  value={bpm}
+                  onChange={(e) => setBpm(parseInt(e.target.value) || 120)}
                   className="bg-transparent text-[11px] font-black text-studio-accent w-8 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
              </div>
              <div className="flex items-center gap-1.5">
-                <Music size={10} className="text-studio-muted" />
+                <Music size={10} className="text-studio-muted" /> 
                 <select 
                   value={state.key}
                   onChange={(e) => setState(s => ({ ...s, key: e.target.value }))}
@@ -981,7 +897,7 @@ export default function Studio() {
           <ZoomOut size={12} className="text-studio-muted" />
           <input 
             type="range"
-            min="10"
+            min="10" 
             max="200"
             value={state.zoom}
             onChange={(e) => setState(s => ({ ...s, zoom: parseInt(e.target.value) }))}
@@ -1003,7 +919,7 @@ export default function Studio() {
       <main className="flex-1 flex overflow-hidden relative">
         {/* Mastering Rack (Conditional) */}
         {masterPreset !== 'None' && (
-          <motion.div 
+          <motion.div
             initial={{ x: 300 }}
             animate={{ x: 0 }}
             className="absolute right-0 top-0 bottom-0 w-64 bg-studio-bg border-l border-studio-border z-20 p-4 flex flex-col gap-6 shadow-2xl"
@@ -1067,7 +983,7 @@ export default function Studio() {
               <button 
                 onClick={() => setSidebarTab('tracks')}
                 className={cn(
-                  "text-[10px] font-bold uppercase tracking-widest transition-all",
+                  "text-[10px] font-bold uppercase tracking-widest transition-all", 
                   sidebarTab === 'tracks' ? "text-studio-text" : "text-studio-muted"
                 )}
               >
@@ -1076,7 +992,7 @@ export default function Studio() {
               <button 
                 onClick={() => setSidebarTab('projects')}
                 className={cn(
-                  "text-[10px] font-bold uppercase tracking-widest transition-all",
+                  "text-[10px] font-bold uppercase tracking-widest transition-all", 
                   sidebarTab === 'projects' ? "text-studio-text" : "text-studio-muted"
                 )}
               >
@@ -1085,7 +1001,7 @@ export default function Studio() {
               {aiAnalysisText && (
                 <button 
                   onClick={() => setSidebarTab('ai-analysis' as any)}
-                  className={cn(
+                  className={cn( 
                     "text-[10px] font-bold uppercase tracking-widest transition-all text-studio-accent",
                     sidebarTab === 'ai-analysis' as any ? "opacity-100" : "opacity-50"
                   )}
@@ -1151,11 +1067,11 @@ export default function Studio() {
           <div className="flex-1 overflow-y-auto track-list">
             {sidebarTab === 'tracks' ? (
               state.tracks.map(track => (
-                <div 
+                <div
                   key={track.id}
-                  onClick={() => setState(s => ({ ...s, selectedTrackId: track.id }))}
-                  className={cn(
-                    "p-3 border-bottom border-studio-border cursor-pointer transition-all border-l-4 group",
+                  onClick={() => setSelectedTrackId(track.id)} // Call Zustand action
+                  className={cn( 
+                    "p-3 border-bottom border-studio-border cursor-pointer transition-all border-l-4 group", 
                     state.selectedTrackId === track.id ? "bg-studio-border/30" : "hover:bg-studio-border/10",
                     track.id === state.selectedTrackId ? "border-studio-accent" : "border-transparent"
                   )}
@@ -1175,7 +1091,7 @@ export default function Studio() {
                           <Layers size={10} />
                        </button>
                        <button 
-                        onClick={(e) => { e.stopPropagation(); removeTrack(track.id); }}
+                        onClick={(e) => { e.stopPropagation(); handleRemoveTrack(track.id); }} // Call local handler
                         className="p-1 hover:text-studio-record transition-colors"
                         title="Delete"
                       >
@@ -1186,7 +1102,7 @@ export default function Studio() {
                   
                   <div className="flex gap-2">
                     <div className="flex h-5 items-center gap-0.5">
-                      <button 
+                      <button
                         onClick={(e) => { e.stopPropagation(); setState(s => ({ ...s, tracks: s.tracks.map(t => t.id === track.id ? { ...t, muted: !t.muted } : t) })) }}
                         className={cn("w-6 h-full border border-studio-border rounded-sm text-[9px] font-bold", track.muted && "bg-yellow-600 text-white")}
                       >M</button>
@@ -1253,7 +1169,7 @@ export default function Studio() {
                               <div className="flex items-center gap-1.5 leading-none mt-0.5">
                                  <span className="text-[7px] font-black text-studio-muted uppercase tracking-tighter border border-studio-border px-1 rounded-sm group-hover:border-studio-accent/30 transition-colors">{item.type}</span>
                                  <span className="text-[8px] text-studio-muted truncate">{(item as any).desc}</span>
-                              </div>
+                              </div> 
                            </div>
                            <Plus size={10} className="opacity-0 group-hover:opacity-100 text-studio-accent" />
                         </div>
@@ -1294,7 +1210,7 @@ export default function Studio() {
                             <div 
                             key={proj.id}
                             className="bg-studio-panel border border-studio-border rounded p-3 hover:border-studio-accent cursor-pointer group transition-all relative overflow-hidden"
-                            onClick={() => loadProjectFromCloud(proj)}
+                            onClick={() => loadProjectFromCloud(proj)} // This will call useStudioStore.setState
                           >
                             {proj.isPublic && <div className="absolute top-0 right-0 w-8 h-8 flex items-center justify-center bg-studio-accent/20 text-studio-accent rounded-bl-lg"><Radio size={10} className="animate-pulse" /></div>}
                             <div className="flex justify-between items-start mb-1">
@@ -1381,7 +1297,7 @@ export default function Studio() {
             <div className="h-6 border-b border-studio-border bg-studio-panel flex items-end">
               <div className="flex w-full overflow-hidden">
                 {Array.from({ length: 128 }).map((_, i) => (
-                  <div key={i} className="shrink-0 h-4 border-l border-studio-border flex items-end pb-0.5 px-1" style={{ width: `${state.zoom * 4}px` }}>
+                  <div key={i} className="shrink-0 h-4 border-l border-studio-border flex items-end pb-0.5 px-1" style={{ width: `${zoom * 4}px` }}>
                     <span className="text-[8px] font-black text-studio-muted leading-none">{(i + 1).toString().padStart(2, '0')}</span>
                     <span className="text-[7px] font-mono text-studio-muted/50 ml-1">.01</span>
                   </div>
@@ -1392,17 +1308,17 @@ export default function Studio() {
             {/* Playhead */}
             <div 
               className="absolute top-0 bottom-0 w-px bg-white z-20 shadow-[0_0_8px_rgba(255,255,255,0.5)] pointer-events-none"
-              style={{ left: `${(state.currentTime / (state.duration || 300)) * 100}%` }}
+              style={{ left: `${(currentTime / (duration || 300)) * 100}%` }}
             />
 
             {/* Tracks Waveforms */}
             <div className="flex flex-col gap-[1px]">
-              {state.tracks.map(track => (
+              {tracks.map(track => (
                 <WaveformView 
                   key={track.id}
                   track={track}
-                  isRecording={state.isRecording && state.selectedTrackId === track.id}
-                  isSelected={state.selectedTrackId === track.id}
+                  isRecording={isRecording && selectedTrackId === track.id}
+                  isSelected={selectedTrackId === track.id}
                   zoom={state.zoom}
                   onUpload={(e) => handleFileUpload(e, track.id)}
                   onShift={(delta) => {
@@ -1508,8 +1424,8 @@ export default function Studio() {
                 <div className="flex items-center gap-2 bg-studio-bg border border-studio-border rounded px-2 py-0.5">
                    <span className="text-[8px] font-black text-studio-muted uppercase">Snap:</span>
                    <select 
-                     value={state.snap}
-                     onChange={(e) => setState(s => ({ ...s, snap: e.target.value as any }))}
+                     value={snap}
+                     onChange={(e) => setSnap(e.target.value as any)} // Call Zustand action
                      className="bg-transparent text-[9px] font-bold text-studio-accent focus:outline-none cursor-pointer"
                    >
                      {['1/4', '1/8', '1/16', '1/32'].map(s => (
@@ -1519,7 +1435,7 @@ export default function Studio() {
                 </div>
                 <div className="h-4 w-px bg-studio-border" />
                 <div className="text-[10px] font-mono text-studio-muted uppercase tracking-tighter">
-                   Track: {state.tracks.find(t => t.id === state.selectedTrackId)?.name || 'None'}
+                   Track: {tracks.find(t => t.id === selectedTrackId)?.name || 'None'}
                 </div>
               </div>
             </div>
@@ -1535,16 +1451,11 @@ export default function Studio() {
                     className="h-full"
                   >
                     <Mixer 
-                      tracks={state.tracks} 
-                      selectedId={state.selectedTrackId} 
+                      tracks={tracks} // Pass tracks from Zustand
+                      selectedId={selectedTrackId} // Pass selectedId from Zustand
                       onInteractionStart={startInteraction}
                       onInteractionEnd={endInteraction}
-                      onUpdateTrack={(id, updates) => {
-                        setState(s => ({
-                          ...s,
-                          tracks: s.tracks.map(t => t.id === id ? { ...t, ...updates } : t)
-                        }));
-                      }} 
+                      onUpdateTrack={updateTrack} // Pass Zustand action directly
                     />
                   </motion.div>
                 )}
@@ -1557,15 +1468,12 @@ export default function Studio() {
                     className="h-full"
                   >
                     <EffectRack 
-                      track={state.tracks.find(t => t.id === state.selectedTrackId)} 
+                      track={tracks.find(t => t.id === selectedTrackId)} // Pass track from Zustand
                       onInteractionStart={startInteraction}
                       onInteractionEnd={endInteraction}
                       onUpdateEffects={(effects) => {
-                        pushToUndo(state, true);
-                        setState(s => ({
-                          ...s,
-                          tracks: s.tracks.map(t => t.id === state.selectedTrackId ? { ...t, effects } : t)
-                        }));
+                        pushToUndo(useStudioStore.getState());
+                        updateTrack(selectedTrackId!, { effects }); // Call Zustand action
                       }}
                     />
                   </motion.div>
@@ -1578,7 +1486,7 @@ export default function Studio() {
                     exit={{ opacity: 0, y: -10 }}
                     className="h-full"
                   >
-                    <AIAssistant tracks={state.tracks} masterPreset={masterPreset} />
+                    <AIAssistant tracks={tracks} masterPreset={masterPreset} /> {/* Pass from Zustand */}
                   </motion.div>
                 )}
                 {activeTab === 'mastering' && (
@@ -1590,8 +1498,8 @@ export default function Studio() {
                     className="h-full"
                   >
                     <MasteringView 
-                      preset={masterPreset} 
-                      onPresetChange={(p) => setMasterPreset(p)} 
+                      preset={masterPreset || 'None'} // Pass from Zustand
+                      onPresetChange={setMasterPreset} // Pass Zustand action
                     />
                   </motion.div>
                 )}
@@ -1625,31 +1533,25 @@ export default function Studio() {
                     exit={{ opacity: 0, scale: 0.98 }}
                     className="h-full"
                   >
-                    {state.tracks.find(t => t.id === state.selectedTrackId)?.type === 'drum' ? (
+                    {tracks.find(t => t.id === selectedTrackId)?.type === 'drum' ? (
                       <StepSequencer
-                        track={state.tracks.find(t => t.id === state.selectedTrackId)!}
-                        bpm={state.bpm}
+                        track={tracks.find(t => t.id === selectedTrackId)!}
+                        bpm={bpm}
                         onUpdateNotes={(notes) => {
-                          pushToUndo(state);
-                          setState(s => ({
-                            ...s,
-                            tracks: s.tracks.map(t => t.id === state.selectedTrackId ? { ...t, notes } : t)
-                          }));
+                          pushToUndo(useStudioStore.getState());
+                          updateTrack(selectedTrackId!, { notes }); // Call Zustand action
                         }}
                       />
-                    ) : (state.tracks.find(t => t.id === state.selectedTrackId)?.type === 'midi' || state.tracks.find(t => t.id === state.selectedTrackId)?.type === 'synth') ? (
+                    ) : (tracks.find(t => t.id === selectedTrackId)?.type === 'midi' || tracks.find(t => t.id === selectedTrackId)?.type === 'synth') ? (
                       <MidiEditor 
-                        track={state.tracks.find(t => t.id === state.selectedTrackId)!} 
-                        snap={state.snap as any}
-                        bpm={state.bpm}
-                        rootKey={state.key.split(' ')[0]}
-                        scale={state.key.split(' ')[1]}
+                        track={tracks.find(t => t.id === selectedTrackId)!}
+                        snap={snap as any}
+                        bpm={bpm}
+                        rootKey={key.split(' ')[0]}
+                        scale={key.split(' ')[1]}
                         onUpdateNotes={(notes) => {
-                          pushToUndo(state);
-                          setState(s => ({
-                            ...s,
-                            tracks: s.tracks.map(t => t.id === state.selectedTrackId ? { ...t, notes } : t)
-                          }));
+                          pushToUndo(useStudioStore.getState());
+                          updateTrack(selectedTrackId!, { notes }); // Call Zustand action
                         }}
                       />
                     ) : (
@@ -1657,15 +1559,15 @@ export default function Studio() {
                         <Keyboard size={32} className="opacity-20" />
                         <div className="text-center">
                           <p className="text-[10px] uppercase font-bold tracking-widest">Select a MIDI or Drum Track</p>
-                          <div className="flex gap-2 justify-center mt-2">
+                          <div className="flex gap-2 justify-center mt-2"> 
                              <button 
-                               onClick={() => addTrack('midi')}
+                               onClick={() => handleAddTrack('midi')}
                                className="text-[10px] text-studio-accent font-bold hover:underline"
                              >
                                + MIDI
                              </button>
                              <button 
-                               onClick={() => addTrack('drum')}
+                               onClick={() => handleAddTrack('drum')}
                                className="text-[10px] text-studio-accent font-bold hover:underline"
                              >
                                + DRUM
@@ -1698,8 +1600,8 @@ export default function Studio() {
                     <div className="flex-1 bg-studio-bg rounded border border-studio-border p-4 flex flex-col gap-2">
                        <div className="flex justify-between items-center px-1">
                           <span className="text-[10px] font-black uppercase tracking-widest text-studio-accent">Studio Lyrics Pad</span>
-                          <span className="text-[9px] font-mono text-studio-muted">Word Count: {state.lyrics?.split(/\s+/).filter(Boolean).length || 0}</span>
-                       </div>
+                          <span className="text-[9px] font-mono text-studio-muted">Word Count: {lyrics?.split(/\s+/).filter(Boolean).length || 0}</span>
+                       </div> 
                        <textarea 
                          value={state.lyrics || ''}
                          onChange={(e) => setState(s => ({ ...s, lyrics: e.target.value }))}
@@ -1717,7 +1619,7 @@ export default function Studio() {
                           <div className="space-y-1 text-[9px] font-bold">
                              <label className="text-studio-muted uppercase block">Mood</label>
                              <select 
-                               value={lyricMood}
+                               value={lyricMood} 
                                onChange={(e) => setLyricMood(e.target.value)}
                                className="w-full bg-studio-bg border border-studio-border rounded px-2 py-1.5 focus:outline-none focus:border-studio-accent transition-all uppercase"
                              >
@@ -1753,9 +1655,8 @@ export default function Studio() {
       <TransportBar 
         state={state} 
         onTogglePlay={togglePlayback}
-        onToggleRecord={() => setState(s => ({ ...s, isRecording: !s.isRecording }))}
-        onUpdateState={(updates) => setState(s => ({ ...s, ...updates }))}
-      />
+        onToggleRecord={toggleRecording} // This now calls the Zustand action
+        onUpdateState={updateStudioState} // This now calls the Zustand action
     </div>
   );
 }

@@ -3,14 +3,10 @@ import { motion } from 'motion/react';
 import { Plus, Trash2, Volume2, Save, Play, Square, Keyboard } from 'lucide-react';
 import { Track, MidiNote } from '../types';
 import { cn, generateId } from '../lib/utils';
+import { useStudioStore } from '../store/studioStore';
 
 interface MidiEditorProps {
-  track: Track;
-  snap: '1/4' | '1/8' | '1/16' | '1/32';
-  bpm: number;
   onUpdateNotes: (notes: any[]) => void;
-  scale?: string;
-  rootKey?: string;
 }
 
 const SCALES: Record<string, number[]> = {
@@ -31,7 +27,9 @@ const NOTES = Array.from({ length: OCTAVES }).flatMap((_, i) =>
   PITCHES.map(p => `${p}${OCTAVES - i}`)
 );
 
-export function MidiEditor({ track, snap, bpm, onUpdateNotes, scale = 'Major', rootKey = 'C' }: MidiEditorProps) {
+export function MidiEditor({ onUpdateNotes }: MidiEditorProps) {
+  const { tracks, selectedTrackId, snap, bpm, key } = useStudioStore(); // Get state from Zustand
+  const track = tracks.find(t => t.id === selectedTrackId); // Find the selected track
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -39,8 +37,8 @@ export function MidiEditor({ track, snap, bpm, onUpdateNotes, scale = 'Major', r
   const isInScale = (noteName: string) => {
     const key = noteName.replace(/\d/, '');
     const notePos = KEY_OFFSETS[key] ?? 0;
-    const rootPos = KEY_OFFSETS[rootKey] ?? 0;
-    const relativePos = (notePos - rootPos + 12) % 12;
+    const rootPos = KEY_OFFSETS[key.split(' ')[0]] ?? 0; // Use rootKey from Zustand
+    const relativePos = (notePos - rootPos + 12) % 12; 
     return SCALES[scale]?.includes(relativePos) ?? true;
   };
 
@@ -98,6 +96,8 @@ export function MidiEditor({ track, snap, bpm, onUpdateNotes, scale = 'Major', r
   };
 
   const removeNote = (id: string, e: React.MouseEvent) => {
+    if (!track) return;
+
     e.stopPropagation();
     onUpdateNotes((track.notes || []).filter(n => n.id !== id));
     if (selectedNoteId === id) setSelectedNoteId(null);
@@ -107,6 +107,8 @@ export function MidiEditor({ track, snap, bpm, onUpdateNotes, scale = 'Major', r
 
   return (
     <div className="flex flex-col h-full bg-studio-bg overflow-hidden border border-studio-border rounded-lg shadow-inner">
+      {!track && <div className="text-studio-muted p-4">No track selected or track is not MIDI/Drum.</div>}
+      {track && (
       {/* Piano Roll Header Controls */}
       <div className="h-10 border-b border-studio-border flex justify-between items-center px-4 bg-studio-panel/50">
          <div className="flex gap-4 items-center">
@@ -137,7 +139,7 @@ export function MidiEditor({ track, snap, bpm, onUpdateNotes, scale = 'Major', r
       <div className="flex-1 flex overflow-hidden">
         {/* Piano Keys Sidebar */}
         <div className="w-20 border-r border-studio-border bg-studio-panel overflow-y-auto scrollbar-none flex flex-col pt-4 pb-12">
-          {NOTES.map((note, pitchIndex) => (
+          {NOTES.map((note) => (
             <div 
               key={note}
               onClick={() => previewNote(note)}
@@ -157,6 +159,7 @@ export function MidiEditor({ track, snap, bpm, onUpdateNotes, scale = 'Major', r
         <div 
           ref={gridRef}
           className="flex-1 overflow-auto relative cursor-crosshair bg-studio-bg group"
+          // Grid background styling remains the same
           style={{
             backgroundImage: `
               linear-gradient(to right, #2c2e33 1px, transparent 1px), 
@@ -171,7 +174,7 @@ export function MidiEditor({ track, snap, bpm, onUpdateNotes, scale = 'Major', r
               const x = e.clientX - rect.left + gridRef.current.scrollLeft;
               const y = e.clientY - rect.top + gridRef.current.scrollTop;
               const time = x / 160; 
-              const pitchIndex = Math.floor(y / 24);
+              const pitchIndex = Math.floor(y / 24); // Assuming 24px height per note
               if (NOTES[pitchIndex]) {
                 addNote(NOTES[pitchIndex], time);
               }
@@ -247,6 +250,7 @@ export function MidiEditor({ track, snap, bpm, onUpdateNotes, scale = 'Major', r
               </motion.div>
             );
           })}
+        </div>
         </div>
       </div>
     </div>

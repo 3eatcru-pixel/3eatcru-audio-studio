@@ -3,11 +3,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Play, Square, Trash2, Save, Download, Music, Grid, Zap, Layers, Volume2 } from 'lucide-react';
 import { Track } from '../types';
 import { cn, generateId } from '../lib/utils';
+import { useStudioStore } from '../store/studioStore';
 
 interface StepSequencerProps {
-  track: Track;
   onUpdateNotes: (notes: any[]) => void;
-  bpm: number;
 }
 
 const DRUM_KIT = [
@@ -21,10 +20,13 @@ const DRUM_KIT = [
 
 const STEPS = 16;
 
-export function StepSequencer({ track, onUpdateNotes, bpm }: StepSequencerProps) {
+export function StepSequencer({ onUpdateNotes }: StepSequencerProps) {
   const [currentStep, setCurrentStep] = useState(-1);
   const [isPlaying, setIsPlaying] = useState(false);
-  
+
+  const { tracks, selectedTrackId, bpm } = useStudioStore(); // Get state from Zustand
+  const track = tracks.find(t => t.id === selectedTrackId); // Find the selected track
+
   // Grid state: Row is DRUM_KIT index, Col is Step index
   const [grid, setGrid] = useState<boolean[][]>(() => {
     const initialGrid = DRUM_KIT.map(() => Array(STEPS).fill(false));
@@ -68,6 +70,8 @@ export function StepSequencer({ track, onUpdateNotes, bpm }: StepSequencerProps)
   };
 
   useEffect(() => {
+    if (!track) return; // Don't run if no track is selected
+
     let interval: any;
     if (isPlaying) {
       const stepTime = (60 / bpm) / 4 * 1000;
@@ -78,10 +82,12 @@ export function StepSequencer({ track, onUpdateNotes, bpm }: StepSequencerProps)
       setCurrentStep(-1);
     }
     return () => clearInterval(interval);
-  }, [isPlaying, bpm]);
+  }, [isPlaying, bpm, track]);
 
   return (
     <div className="flex flex-col h-full bg-studio-bg overflow-hidden border border-studio-border rounded-xl shadow-2xl">
+      {!track && <div className="text-studio-muted p-4">No track selected or track is not a Drum track.</div>}
+      {track && (
       {/* Header */}
       <div className="h-12 border-b border-studio-border flex justify-between items-center px-4 bg-studio-panel/50 backdrop-blur-md">
         <div className="flex items-center gap-3">
@@ -167,6 +173,7 @@ export function StepSequencer({ track, onUpdateNotes, bpm }: StepSequencerProps)
          </div>
       </div>
 
+      )}
       {/* Footer Info */}
       <div className="h-8 border-t border-studio-border bg-black/20 flex items-center px-4 justify-between">
          <div className="flex items-center gap-4 text-[7px] font-bold text-studio-muted uppercase tracking-widest">

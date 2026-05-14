@@ -3,9 +3,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Power, ChevronRight, Settings2, Sparkles, Volume2, Hash, Zap, Mic, Plus } from 'lucide-react';
 import { Track, AudioEffect } from '../types';
 import { cn } from '../lib/utils';
+import { useStudioStore } from '../store/studioStore';
 
 interface EffectRackProps {
-  track?: Track;
   onUpdateEffects: (effects: AudioEffect[]) => void;
   onInteractionStart?: () => void;
   onInteractionEnd?: () => void;
@@ -36,7 +36,9 @@ const VOCAL_CHAINS = [
   { id: 'lofi-vocal', name: 'Lo-Fi Chill', icon: <Sparkles size={12} />, effects: ['eq', 'doubler', 'reverb'] },
 ];
 
-export function EffectRack({ track, onUpdateEffects, onInteractionStart, onInteractionEnd }: EffectRackProps) {
+export function EffectRack({ onUpdateEffects, onInteractionStart, onInteractionEnd }: EffectRackProps) {
+  const { tracks, selectedTrackId } = useStudioStore(); // Get tracks and selectedTrackId from Zustand
+  const track = tracks.find(t => t.id === selectedTrackId); // Find the selected track
   const [showAddMenu, setShowAddMenu] = useState(false);
 
   if (!track) {

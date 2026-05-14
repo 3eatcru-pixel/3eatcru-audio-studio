@@ -19,6 +19,8 @@ export const saveProjectToDrive = async (projectId: string, projectName: string,
     }
   };
 
+  // Recomendação: Para arquivos de áudio grandes, use uploadType=resumable
+  // O código atual é ideal para o arquivo de definição do projeto (.aura)
   const file = new Blob([JSON.stringify(projectData)], { type: 'application/json' });
   const form = new FormData();
   form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
@@ -38,6 +40,42 @@ export const saveProjectToDrive = async (projectId: string, projectName: string,
     return result.id;
   } catch (error) {
     console.error('Drive Save Error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Uploads a raw audio blob to Google Drive.
+ * Used for saving recorded tracks or imported samples.
+ */
+export const uploadAudioToDrive = async (blob: Blob, fileName: string, trackId: string) => {
+  const token = localStorage.getItem('google_drive_token');
+  if (!token) throw new Error('Not authenticated with Google Drive');
+
+  const metadata = {
+    name: `${fileName}.wav`,
+    mimeType: 'audio/wav',
+    appProperties: {
+      trackId: trackId,
+      app: 'AURA'
+    }
+  };
+
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+  form.append('file', blob);
+
+  try {
+    const response = await fetch(`${UPLOAD_API_BASE}/files?uploadType=multipart&fields=id,webViewLink`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: form
+    });
+
+    if (!response.ok) throw new Error('Failed to upload audio to Drive');
+    return await response.json(); // Retorna o ID e o link do arquivo
+  } catch (error) {
+    console.error('Drive Audio Upload Error:', error);
     throw error;
   }
 };
