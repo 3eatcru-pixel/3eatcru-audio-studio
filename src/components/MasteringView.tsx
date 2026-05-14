@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Zap, Activity, Waves, Gauge, Disc, Wand2, Sparkles, Sliders, Volume2, Shield, Layers } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { MasterPreset } from '../types';
+import { MasterPreset } from '../types'; // Keep MasterPreset type
+import { useStudioStore } from '../store/studioStore'; // Import Zustand store
 
 interface MasteringViewProps {
   preset: MasterPreset;
@@ -18,6 +19,7 @@ const MODULES = [
 ];
 
 export function MasteringView({ preset, onPresetChange }: MasteringViewProps) {
+  // The preset and onPresetChange are still passed as props from Studio.tsx, which now gets them from Zustand
   const [isProcessing, setIsProcessing] = useState(false);
   const [meterValues, setMeterValues] = useState<number[]>(Array(5).fill(0));
 
