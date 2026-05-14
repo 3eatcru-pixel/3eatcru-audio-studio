@@ -1,7 +1,7 @@
-import React from 'react';
-import { motion } from 'motion/react';
-import { Power, ChevronRight, Settings2, Sparkles, Volume2, Hash, Zap, Mic } from 'lucide-react';
-import { Track } from '../types';
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Power, ChevronRight, Settings2, Sparkles, Volume2, Hash, Zap, Mic, Plus } from 'lucide-react';
+import { Track, AudioEffect } from '../types';
 import { cn } from '../lib/utils';
 
 interface EffectRackProps {
@@ -28,6 +28,12 @@ const PROCESS_ACTIONS = [
   { id: 'reverse', name: 'Reverse Audio', icon: <Zap size={12} /> },
   { id: 'denoise', name: 'AI De-Noise', icon: <Sparkles size={12} />, secondary: true },
   { id: 'dereverb', name: 'AI De-Reverb', icon: <Sparkles size={12} />, secondary: true },
+];
+
+const VOCAL_CHAINS = [
+  { id: 'trap-vocal', name: 'Trap Sauce', icon: <Mic size={12} />, effects: ['vocal-tune', 'eq', 'comp', 'delay'] },
+  { id: 'drill-vocal', name: 'Drill Master', icon: <Zap size={12} />, effects: ['vocal-tune', 'deesser', 'comp', 'reverb'] },
+  { id: 'lofi-vocal', name: 'Lo-Fi Chill', icon: <Sparkles size={12} />, effects: ['eq', 'doubler', 'reverb'] },
 ];
 
 export function EffectRack({ track, onUpdateEffects, onInteractionStart, onInteractionEnd }: EffectRackProps) {
@@ -68,6 +74,25 @@ export function EffectRack({ track, onUpdateEffects, onInteractionStart, onInter
     ));
   };
 
+  const applyVocalChain = (chainId: string) => {
+    const chain = VOCAL_CHAINS.find(c => c.id === chainId);
+    if (!chain) return;
+    
+    if (onInteractionStart) onInteractionStart();
+    const newEffects: AudioEffect[] = chain.effects.map(effId => {
+      const libInfo = EFFECTS_LIBRARY.find(l => l.id === effId) || EFFECTS_LIBRARY[0];
+      return {
+        id: `${effId}-${Date.now()}-${Math.random()}`,
+        name: libInfo.name,
+        type: effId,
+        category: libInfo.category,
+        enabled: true,
+        params: {}
+      };
+    });
+    onUpdateEffects(newEffects);
+  };
+
   const activeEffects = track.effects || [];
 
   return (
@@ -97,6 +122,25 @@ export function EffectRack({ track, onUpdateEffects, onInteractionStart, onInter
               <ChevronRight size={10} className="opacity-0 group-hover:opacity-100 transition-opacity" />
             </button>
           ))}
+        </div>
+
+        <div className="mt-4 pt-4 border-t border-studio-border/30">
+          <div className="flex items-center gap-2 mb-2 px-1">
+            <Mic size={10} className="text-studio-accent" />
+            <span className="text-[8px] font-black uppercase tracking-widest text-studio-muted">AURA Chains</span>
+          </div>
+          <div className="flex flex-col gap-1">
+            {VOCAL_CHAINS.map(chain => (
+              <button 
+                key={chain.id}
+                onClick={() => applyVocalChain(chain.id)}
+                className="flex items-center gap-2 p-2 rounded bg-studio-accent/5 border border-studio-accent/10 hover:bg-studio-accent/20 text-[9px] font-bold transition-all text-studio-text"
+              >
+                {chain.icon}
+                <span>{chain.name}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="mt-auto pt-4 border-t border-studio-border/30">

@@ -20,10 +20,15 @@ const AI_TIPS = [
   }
 ];
 
-export function AIAssistant() {
+interface AIAssistantProps {
+  tracks?: any[];
+  masterPreset?: string;
+}
+
+export function AIAssistant({ tracks = [], masterPreset = 'None' }: AIAssistantProps) {
   const [prompt, setPrompt] = useState('');
   const [messages, setMessages] = useState<{ role: 'ai' | 'user', content: string }[]>([
-    { role: 'ai', content: "Hello! I'm your studio assistant. How can I help you today? I can suggest lyrics, analyze your mix, or give mastering tips." }
+    { role: 'ai', content: `Hello! I'm AURA. I see you're working on a session with ${tracks.length} tracks and ${masterPreset} mastering. I now have access to real-time web search for gear info, references, and tutorials. How can I help you today?` }
   ]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -36,17 +41,18 @@ export function AIAssistant() {
     setIsLoading(true);
 
     try {
-      // In a real app, you would detect context (lyrics vs analysis)
-      let response;
-      if (userMessage.toLowerCase().includes('lyrics')) {
-        response = await aiStudioService.suggestLyrics('Pop', userMessage);
-      } else {
-        response = "I've analyzed your track. For a professional Pop mix, I suggest reducing the low mids (250Hz) and adding a slight shimmer at 8kHz for the vocals.";
-      }
+      const context = `Session Context: ${tracks.length} tracks (${tracks.map(t => t.name).join(', ')}). Mastering: ${masterPreset}. Current User Goal: ${userMessage}`;
       
+      const history = messages.map(m => ({
+        role: m.role === 'ai' ? 'model' as const : 'user' as const,
+        parts: [{ text: m.content }]
+      }));
+
+      const response = await aiStudioService.getChatResponse(context, history);
       setMessages(prev => [...prev, { role: 'ai', content: response }]);
     } catch (e) {
-      setMessages(prev => [...prev, { role: 'ai', content: "Sorry, I had trouble processing that request." }]);
+      console.error(e);
+      setMessages(prev => [...prev, { role: 'ai', content: "I encountered a technical glitch in the matrix. Could you try rephrasing that?" }]);
     } finally {
       setIsLoading(false);
     }

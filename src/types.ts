@@ -39,6 +39,9 @@ export interface AudioEffect {
 }
 
 export interface StudioState {
+  id?: string;
+  name?: string;
+  driveFileId?: string;
   isPlaying: boolean;
   isRecording: boolean;
   currentTime: number;
@@ -48,6 +51,9 @@ export interface StudioState {
   metronomeEnabled: boolean;
   tracks: Track[];
   selectedTrackId: string | null;
+  lyrics?: string;
+  key: string;
+  snap: '1/4' | '1/8' | '1/16' | '1/32';
 }
 
-export type MasterPreset = 'Pop' | 'Trap' | 'Rock' | 'Sertanejo' | 'Lo-Fi' | 'Electronic';
+export type MasterPreset = 'Pop' | 'Trap' | 'Rock' | 'Sertanejo' | 'Lo-Fi' | 'Electronic' | 'Rap' | 'Hip Hop' | 'None';

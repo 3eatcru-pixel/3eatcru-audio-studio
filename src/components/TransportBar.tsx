@@ -40,9 +40,9 @@ export function TransportBar({ state, onTogglePlay, onToggleRecord, onUpdateStat
           
           <div className="flex flex-col">
             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-studio-muted leading-tight mb-1">Position</span>
-            <div className="bg-black/40 px-3 py-1.5 rounded border border-white/5 flex items-baseline gap-1 shadow-inner">
-              <span className="text-xl font-mono font-bold tracking-tighter text-studio-muted tabular-nums leading-none">
-                {Math.floor(state.currentTime / 2 + 1).toString().padStart(3, '0')}
+            <div className="bg-black/40 px-3 py-1.5 rounded border border-white/5 flex items-baseline gap-1 shadow-inner min-w-[64px]">
+              <span className="text-xl font-mono font-bold tracking-tighter text-studio-text tabular-nums leading-none">
+                {Math.floor(state.currentTime / (240 / state.bpm) + 1).toString().padStart(3, '0')}
               </span>
               <span className="text-xs font-mono font-bold text-studio-accent/60 uppercase">Bar</span>
             </div>
@@ -128,14 +128,28 @@ export function TransportBar({ state, onTogglePlay, onToggleRecord, onUpdateStat
           <button 
             onClick={() => onUpdateState({ metronomeEnabled: !state.metronomeEnabled })}
             className={cn(
-              "w-12 h-12 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all group",
+              "w-12 h-12 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all group relative overflow-hidden",
               state.metronomeEnabled 
                 ? "border-studio-accent bg-studio-accent/20 text-studio-accent shadow-[0_0_10px_rgba(59,130,246,0.2)]" 
                 : "border-white/5 bg-white/5 text-studio-muted hover:border-white/20 hover:text-studio-text"
             )}
           >
-            <Bell size={16} className={state.metronomeEnabled ? "animate-[bounce_0.5s_infinite]" : "group-hover:animate-shake"} />
-            <span className="text-[7px] font-black uppercase tracking-widest">Click</span>
+            {state.metronomeEnabled && state.isPlaying && (
+              <motion.div 
+                key={Math.floor(state.currentTime * (state.bpm / 60))}
+                initial={{ opacity: 1, scale: 1 }}
+                animate={{ opacity: 0, scale: 2 }}
+                className="absolute inset-0 bg-studio-accent/20"
+              />
+            )}
+            <Bell size={16} className={state.metronomeEnabled && state.isPlaying ? "animate-shake" : "group-hover:animate-shake"} />
+            <span className="text-[7px] font-black uppercase tracking-widest leading-none">Click</span>
+            {state.metronomeEnabled && (
+               <div className={cn(
+                 "absolute top-1 right-1 w-1.5 h-1.5 rounded-full",
+                 Math.floor(state.currentTime * (state.bpm / 60)) % 4 === 0 ? "bg-studio-record" : "bg-studio-accent"
+               )} />
+            )}
           </button>
           
           <button 
@@ -144,6 +158,35 @@ export function TransportBar({ state, onTogglePlay, onToggleRecord, onUpdateStat
             <Activity size={16} className="group-hover:scale-110 transition-transform" />
             <span className="text-[7px] font-black uppercase tracking-widest">Sync</span>
           </button>
+
+          <div className="flex flex-col gap-1 px-4 border-l border-white/5">
+             <div className="flex justify-between items-center w-32">
+                <span className="text-[7px] font-black uppercase text-studio-muted tracking-tighter">Master L</span>
+                <span className="text-[6px] font-mono text-studio-muted">RMS: -14</span>
+             </div>
+             <div className="w-32 h-1.5 bg-black/40 rounded-full overflow-hidden border border-white/5 flex gap-[1px]">
+                {Array.from({ length: 24 }).map((_, i) => (
+                  <div 
+                    key={i} 
+                    className={cn(
+                      "flex-1 h-full", 
+                      state.isPlaying ? (i < 18 ? "bg-studio-accent/40" : i < 22 ? "bg-yellow-500/40" : "bg-studio-record/40") : "bg-white/5"
+                    )} 
+                  />
+                ))}
+             </div>
+             <div className="w-32 h-1.5 bg-black/40 rounded-full overflow-hidden border border-white/5 flex gap-[1px]">
+                {Array.from({ length: 24 }).map((_, i) => (
+                  <div 
+                    key={i} 
+                    className={cn(
+                      "flex-1 h-full", 
+                      state.isPlaying ? (i < 16 ? "bg-studio-accent/40" : i < 20 ? "bg-yellow-500/40" : "bg-studio-record/40") : "bg-white/5"
+                    )} 
+                  />
+                ))}
+             </div>
+          </div>
         </div>
       </div>
     </footer>

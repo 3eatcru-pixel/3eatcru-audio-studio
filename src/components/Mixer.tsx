@@ -92,6 +92,37 @@ function Knob({ label, value, min = -15, max = 15, onChange, onInteractionStart,
   );
 }
 
+function VisualEQ({ hi, mid, low }: { hi: number, mid: number, low: number }) {
+  // Normalize values -15 to 15 -> 0 to 1
+  const h = (hi + 15) / 30;
+  const m = (mid + 15) / 30;
+  const l = (low + 15) / 30;
+
+  return (
+    <div className="w-full h-8 bg-black/40 rounded border border-white/5 relative overflow-hidden flex items-end">
+       <svg viewBox="0 0 100 40" className="w-full h-full preserve-3d" preserveAspectRatio="none">
+          <motion.path 
+            d={`M 0 40 Q 25 ${40 - l * 40} 50 ${40 - m * 40} T 100 ${40 - h * 40} L 100 40 L 0 40 Z`}
+            fill="url(#eq-gradient)"
+            animate={{ d: `M 0 40 Q 25 ${40 - l * 40} 50 ${40 - m * 40} T 100 ${40 - h * 40} L 100 40 L 0 40 Z` }}
+            transition={{ type: 'spring', stiffness: 100, damping: 20 }}
+          />
+          <defs>
+            <linearGradient id="eq-gradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--color-studio-accent)" stopOpacity="0.4" />
+              <stop offset="100%" stopColor="var(--color-studio-accent)" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+       </svg>
+       <div className="absolute inset-0 flex justify-between px-1 pointer-events-none opacity-20">
+          <div className="w-px h-full bg-white/20" />
+          <div className="w-px h-full bg-white/20" />
+          <div className="w-px h-full bg-white/20" />
+       </div>
+    </div>
+  );
+}
+
 export function Mixer({ tracks, selectedId, onUpdateTrack, onInteractionStart, onInteractionEnd }: MixerProps) {
   return (
     <div className="flex gap-2 h-full overflow-x-auto pb-4 pt-1 px-1">
@@ -126,10 +157,14 @@ export function Mixer({ tracks, selectedId, onUpdateTrack, onInteractionStart, o
           {/* EQ Section */}
           <div className="w-full px-2 mb-3">
             <div className="bg-studio-bg/40 rounded p-1 border border-studio-border/30">
-               <div className="text-[6px] font-black text-studio-muted uppercase mb-1 flex items-center gap-1">
-                 <Zap size={6} /> Channel EQ
+               <div className="text-[6px] font-black text-studio-muted uppercase mb-1 flex items-center justify-between">
+                 <div className="flex items-center gap-1">
+                   <Zap size={6} /> Channel EQ
+                 </div>
+                 <span className="text-[5px] font-mono opacity-50">PARAMETRIC</span>
                </div>
-               <div className="flex justify-between">
+               <VisualEQ hi={track.eqHigh || 0} mid={track.eqMid || 0} low={track.eqLow || 0} />
+               <div className="flex justify-between mt-1">
                  <Knob label="Hi" value={track.eqHigh || 0} onChange={(v) => onUpdateTrack(track.id, { eqHigh: v })} onInteractionStart={onInteractionStart} onInteractionEnd={onInteractionEnd} />
                  <Knob label="Mid" value={track.eqMid || 0} onChange={(v) => onUpdateTrack(track.id, { eqMid: v })} onInteractionStart={onInteractionStart} onInteractionEnd={onInteractionEnd} />
                  <Knob label="Low" value={track.eqLow || 0} onChange={(v) => onUpdateTrack(track.id, { eqLow: v })} onInteractionStart={onInteractionStart} onInteractionEnd={onInteractionEnd} />

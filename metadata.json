@@ -1,6 +1,6 @@
 {
-  "name": "Gemini Audio Studio",
-  "description": "A professional AI-powered music studio for recording, mixing, and mastering with intelligent vocal processing.",
+  "name": "AURA - Cloud Audio Studio",
+  "description": "Professional AI-powered music studio with Zero-Cost Cloud Architecture (Firebase + Google Drive integration).",
   "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["audio_processing", "ai_suggestions"]
 }
